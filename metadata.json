@@ -1,0 +1,6 @@
+{
+  "name": "Relative Pitch Trainer",
+  "description": "Client-side relative pitch training app with movable-Do solfege, 12-TET frequency engine, and Web Audio API synthesized tanpura drone.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
