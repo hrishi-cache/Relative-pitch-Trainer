@@ -1211,7 +1211,12 @@
           previousTonicIndex: null,
           hasPreSelectedTonic: false,
           highlightedCorrect: [],
-          highlightedIncorrect: []
+          highlightedIncorrect: [],
+          answerTimeouts: [],
+          feedbackTimeouts: [],
+          pendingLevelAdvanceFn: null,
+          pendingRandomTonicFn: null,
+          pendingUnlockFn: null
         };
 
         /* =======================================================================
@@ -1462,13 +1467,18 @@
           initAudioContext();
           const ctx = AppState.audioCtx;
           const now = ctx.currentTime;
+          
+          if (AppState.feedbackTimeouts) {
+            AppState.feedbackTimeouts.forEach(clearTimeout);
+            AppState.feedbackTimeouts = [];
+          }
 
           if (isCorrect) {
             // Softer, sweeter celestial harp arpeggio (Root, 5th, Octave)
             const base = AppState.currentTonicFreq * 2;
             playNote(base, 0.40, 'sine', 0.65);
-            setTimeout(() => playNote(base * Math.pow(2, 7/12), 0.45, 'sine', 0.70), 70);
-            setTimeout(() => playNote(base * 2, 0.55, 'sine', 0.75), 140);
+            AppState.feedbackTimeouts.push(setTimeout(() => playNote(base * Math.pow(2, 7/12), 0.45, 'sine', 0.70), 70));
+            AppState.feedbackTimeouts.push(setTimeout(() => playNote(base * 2, 0.55, 'sine', 0.75), 140));
           } else {
             // Low error thud / buzzer
             const osc = ctx.createOscillator();
@@ -1828,6 +1838,24 @@
          * Triggers a new quiz question
          */
         function triggerNextQuestion() {
+          if (AppState.isAnswerLocked) {
+             if (AppState.answerTimeouts) {
+               AppState.answerTimeouts.forEach(clearTimeout);
+               AppState.answerTimeouts = [];
+             }
+             if (AppState.pendingLevelAdvanceFn) {
+                AppState.pendingLevelAdvanceFn();
+                AppState.pendingLevelAdvanceFn = null;
+             }
+             if (AppState.pendingRandomTonicFn) {
+                AppState.pendingRandomTonicFn();
+                AppState.pendingRandomTonicFn = null;
+             }
+             if (AppState.pendingUnlockFn) {
+                AppState.pendingUnlockFn();
+                AppState.pendingUnlockFn = null;
+             }
+          }
           if (AppState.isAnswerLocked) return;
 
           const shouldUseRandomDo = (AppState.trainingMode === 'chromatic' && AppState.chromaticDoMode === 'random') ||
@@ -1907,6 +1935,11 @@
             return;
           }
 
+          if (AppState.answerTimeouts) {
+            AppState.answerTimeouts.forEach(clearTimeout);
+            AppState.answerTimeouts = [];
+          }
+
           AppState.isAnswerLocked = true;
           const targetNote = AppState.currentQuestionNote;
           const isCorrect = selectedNote.semitones === targetNote.semitones;
@@ -1921,7 +1954,8 @@
 
             if (AppState.streak === AppState.maxStreakTarget) {
               logStatus(`🎉 STREAK COMPLETE! Level Passed! Advancing progression...`);
-              setTimeout(() => {
+              
+              const levelAdvanceFn = () => {
                 AppState.streak = 0;
                 updateStreakUI();
                 
@@ -1946,13 +1980,16 @@
                 AppState.highlightedCorrect = [];
                 AppState.highlightedIncorrect = [];
                 renderSolfegeConsole();
-              }, 1400);
+              };
+              
+              AppState.answerTimeouts.push(setTimeout(levelAdvanceFn, 1400));
+              AppState.pendingLevelAdvanceFn = levelAdvanceFn;
               return;
             }
 
             logStatus(`✅ CORRECT! That pitch was ${targetNote.syllable} (${targetNote.devanagari}). Streak: ${AppState.streak}/${AppState.maxStreakTarget}`);
             
-            setTimeout(() => {
+            const randomTonicFn = () => {
               const shouldUseRandomDo = (AppState.trainingMode === 'chromatic' && AppState.chromaticDoMode === 'random') ||
                                         (AppState.trainingMode !== 'chromatic' && AppState.streak >= 10);
               if (shouldUseRandomDo && AppState.streak < AppState.maxStreakTarget) {
@@ -1960,13 +1997,17 @@
                 AppState.hasPreSelectedTonic = true;
                 logStatus(`[Random-Do Mode] Next tonic set to ${AppState.currentTonicName}. Listen to the drone!`);
               }
-            }, 720);
+            };
+            AppState.answerTimeouts.push(setTimeout(randomTonicFn, 720));
+            AppState.pendingRandomTonicFn = randomTonicFn;
 
-            setTimeout(() => {
+            const unlockFn = () => {
               // We removed the removal of 'correct' class here to keep it highlighted until next question.
               AppState.currentQuestionNote = null;
               AppState.isAnswerLocked = false;
-            }, 1100);
+            };
+            AppState.answerTimeouts.push(setTimeout(unlockFn, 1100));
+            AppState.pendingUnlockFn = unlockFn;
 
           } else {
             // --- INCORRECT ANSWER ---
@@ -1998,11 +2039,13 @@
             }
             updateStreakUI();
 
-            setTimeout(() => {
+            const unlockFn = () => {
               // We removed the removal of 'incorrect' and 'correct' classes here to keep them highlighted.
               AppState.currentQuestionNote = null;
               AppState.isAnswerLocked = false;
-            }, 1600);
+            };
+            AppState.answerTimeouts.push(setTimeout(unlockFn, 1600));
+            AppState.pendingUnlockFn = unlockFn;
           }
         }
 
